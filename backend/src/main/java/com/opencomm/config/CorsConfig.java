@@ -14,7 +14,6 @@ public class CorsConfig implements WebMvcConfigurer {
                     "http://localhost:3000",
                     "http://localhost:8080",
                     "https://opencomm.vercel.app",
-                    "https://opencomm-backend.onrender.com/api/rooms"
                 )
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
