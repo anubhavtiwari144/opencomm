@@ -206,7 +206,7 @@ function App() {
         addSystemMessage(`Invite opened for room ${roomResponse.roomId}.`);
       })
       .catch((requestError) => setError(requestError.message));
-  }, [initialInviteRoom]);
+  }, [initialInviteRoom, sessionId]);
 
   useEffect(() => {
     if (!roomId) return undefined;
