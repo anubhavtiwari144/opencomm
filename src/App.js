@@ -525,7 +525,7 @@ function App() {
           <div ref={messagesEndRef} />
         </div>
 
-        {canChat && (
+        {/* {canChat && (
           <div className="quick-replies">
             {quickReplies.map((reply) => (
               <button key={reply} onClick={(event) => sendMessage(event, reply)}>
@@ -533,7 +533,7 @@ function App() {
               </button>
             ))}
           </div>
-        )}
+        )} */}
 
         <form className="composer" onSubmit={sendMessage}>
           <input
