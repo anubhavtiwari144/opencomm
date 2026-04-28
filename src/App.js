@@ -27,11 +27,11 @@ const flowSteps = [
   },
 ];
 
-const quickReplies = [
-  'I can see your messages.',
-  'Let us continue here.',
-  'This room feels private.',
-];
+// const quickReplies = [
+//   'I can see your messages.',
+//   'Let us continue here.',
+//   'This room feels private.',
+// ];
 
 function getSessionId() {
   const existing = localStorage.getItem(SESSION_KEY);
