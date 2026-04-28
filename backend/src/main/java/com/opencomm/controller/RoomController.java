@@ -18,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.validation.Valid;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/rooms")
 public class RoomController {
@@ -30,7 +29,7 @@ public class RoomController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public RoomResponse createRoom(@Valid @RequestBody CreateRoomRequest request) {
+    public RoomResponse createRoom(@RequestBody CreateRoomRequest request) {
         Room room = roomService.createRoom(request.getSessionId(), request.getName());
         return RoomResponse.from(room);
     }
