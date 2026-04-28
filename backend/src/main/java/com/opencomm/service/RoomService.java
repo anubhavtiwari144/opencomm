@@ -38,6 +38,16 @@ public class RoomService {
         return room;
     }
 
+    public Room getReadableRoom(String roomId, String sessionId) {
+        Room room = getRoom(roomId);
+        synchronized (room) {
+            if (isReadRestricted(room) && !isParticipant(room, sessionId)) {
+                throw new RoomException(HttpStatus.FORBIDDEN, "Room is private to host and guest");
+            }
+            return room;
+        }
+    }
+
     public Room requestJoin(String roomId, String guestSessionId, String guestName) {
         Room room = getRoom(roomId);
         synchronized (room) {
@@ -162,6 +172,13 @@ public class RoomService {
         }
     }
 
+    public String resolveClientSessionId(String socketSessionId) {
+        if (socketSessionId == null) {
+            return null;
+        }
+        return clientSessionBySocketSession.get(socketSessionId);
+    }
+
     public String unbindSocketSession(String socketSessionId) {
         if (socketSessionId == null) {
             return null;
@@ -183,6 +200,17 @@ public class RoomService {
 
     private boolean isHost(Room room, String sessionId) {
         return room.getHost() != null && room.getHost().getSessionId().equals(sessionId);
+    }
+
+    private boolean isParticipant(Room room, String sessionId) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            return false;
+        }
+        return findParticipant(room, sessionId) != null;
+    }
+
+    private boolean isReadRestricted(Room room) {
+        return room.getGuest() != null;
     }
 
     private UserSession findParticipant(Room room, String sessionId) {

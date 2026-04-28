@@ -200,7 +200,7 @@ function App() {
   useEffect(() => {
     if (!initialInviteRoom) return;
 
-    apiRequest(`/api/rooms/${initialInviteRoom}`)
+    apiRequest(`/api/rooms/${initialInviteRoom}?sessionId=${encodeURIComponent(sessionId)}`)
       .then((roomResponse) => {
         setRoom(roomResponse);
         addSystemMessage(`Invite opened for room ${roomResponse.roomId}.`);
