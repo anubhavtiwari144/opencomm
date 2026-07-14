@@ -50,9 +50,10 @@ function getInviteRoomFromUrl() {
 
 function formatTime(value) {
   const date = value ? new Date(value) : new Date();
-  return new Intl.DateTimeFormat([], {
+  return new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
   }).format(date);
 }
 
@@ -179,8 +180,11 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
+  const [isRoomLoading, setIsRoomLoading] = useState(false);
   const clientRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const displayNameSyncRef = useRef('');
 
   const roomId = room?.roomId || initialInviteRoom || '';
   const roomStatus = room?.status || (initialInviteRoom ? 'INVITED' : 'EMPTY');
@@ -198,14 +202,28 @@ function App() {
   }, [messages, roomStatus]);
 
   useEffect(() => {
-    if (!initialInviteRoom) return;
+    if (!initialInviteRoom) return undefined;
+
+    let cancelled = false;
+    setIsRoomLoading(true);
 
     apiRequest(`/api/rooms/${initialInviteRoom}?sessionId=${encodeURIComponent(sessionId)}`)
       .then((roomResponse) => {
+        if (cancelled) return;
         setRoom(roomResponse);
+        setStatusMessage(statusText(roomResponse.status, roomResponse.pendingGuestName, roomResponse.guestName));
         addSystemMessage(`Invite opened for room ${roomResponse.roomId}.`);
       })
-      .catch((requestError) => setError(requestError.message));
+      .catch((requestError) => {
+        if (!cancelled) setError(requestError.message);
+      })
+      .finally(() => {
+        if (!cancelled) setIsRoomLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [initialInviteRoom, sessionId]);
 
   useEffect(() => {
@@ -239,30 +257,64 @@ function App() {
   }
 
   function handleStatusEvent(event) {
-    setRoom({
+    const nextRoom = {
       roomId: event.roomId,
       hostName: event.hostName,
       guestName: event.guestName,
       pendingGuestName: event.pendingGuestName,
       status: event.status,
-    });
+    };
+
+    setRoom(nextRoom);
+    setStatusMessage(
+      event.type === 'DISPLAY_NAME_UPDATED'
+        ? statusText(event.status, event.pendingGuestName, event.guestName)
+        : event.message || statusText(event.status, event.pendingGuestName, event.guestName)
+    );
+
+    if (isHost && event.hostName) {
+      setName(event.hostName);
+      displayNameSyncRef.current = event.hostName;
+    }
+
+    if (!isHost && (event.status === 'PENDING' || event.status === 'ACTIVE') && event.guestName) {
+      setName(event.guestName);
+      displayNameSyncRef.current = event.guestName;
+    } else if (!isHost && event.status === 'PENDING' && event.pendingGuestName) {
+      setName(event.pendingGuestName);
+      displayNameSyncRef.current = event.pendingGuestName;
+    }
 
     if (event.type === 'ROOM_DELETED' || event.type === 'ROOM_ENDED') {
-      addSystemMessage(event.message || 'Room ended.');
+      clientRef.current?.close();
+      setMessages([
+        {
+          id: `system-${Date.now()}-${Math.random()}`,
+          author: 'system',
+          text: event.message || 'Room ended.',
+          time: formatTime(),
+        },
+      ]);
+      setMessageText('');
+      setMenuOpen(false);
       setConnected(false);
       return;
     }
 
-    if (event.message) addSystemMessage(event.message);
+    if (event.message && event.type !== 'DISPLAY_NAME_UPDATED') addSystemMessage(event.message);
     if (event.status === 'ACTIVE') setMenuOpen(false);
   }
 
   function handleChatMessage(event) {
+    const senderRole = event.senderRole || (event.senderSessionId === sessionId ? role : role === 'host' ? 'guest' : 'host');
+    const senderName = event.senderName || (senderRole === 'host' ? 'Host' : 'Guest');
+
     setMessages((currentMessages) => [
       ...currentMessages,
       {
         id: `message-${Date.now()}-${Math.random()}`,
-        author: event.senderSessionId === sessionId ? 'host' : 'guest',
+        author: senderRole,
+        senderName,
         text: event.text,
         time: formatTime(event.sentAt),
       },
@@ -271,6 +323,8 @@ function App() {
 
   async function createRoom() {
     setError('');
+    setIsRoomLoading(true);
+
     try {
       const nextRoom = await apiRequest('/api/rooms', {
         method: 'POST',
@@ -278,11 +332,16 @@ function App() {
       });
       setRole('host');
       setRoom(nextRoom);
+      setStatusMessage(statusText(nextRoom.status, nextRoom.pendingGuestName, nextRoom.guestName));
+      setName(nextRoom.hostName || name.trim() || 'Host');
+      displayNameSyncRef.current = nextRoom.hostName || name.trim() || 'Host';
       setMessages([]);
       addSystemMessage('Room created. Share the invite link with one friend.');
       window.history.replaceState(null, '', window.location.pathname);
     } catch (requestError) {
       setError(requestError.message);
+    } finally {
+      setIsRoomLoading(false);
     }
   }
 
@@ -296,6 +355,8 @@ function App() {
       sessionId,
       name: name.trim() || 'Guest',
     });
+    displayNameSyncRef.current = name.trim() || 'Guest';
+    setStatusMessage('Join request sent. Waiting for host approval.');
     addSystemMessage('Join request sent. Waiting for host approval.');
   }
 
@@ -317,6 +378,7 @@ function App() {
     setMessages([]);
     setMessageText('');
     setError('');
+    setStatusMessage('');
     setConnected(false);
     setMenuOpen(false);
     setRole('host');
@@ -346,9 +408,31 @@ function App() {
     setMessageText('');
   }
 
+  useEffect(() => {
+    if (!roomId || !clientRef.current) return undefined;
+
+    const trimmedName = name.trim();
+    if (!trimmedName || trimmedName === displayNameSyncRef.current) return undefined;
+
+    const canSyncName = room?.status !== 'ENDED' && (isHost || room?.status === 'PENDING' || room?.status === 'ACTIVE');
+    if (!canSyncName) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      clientRef.current?.send('/app/display-name', {
+        roomId,
+        sessionId,
+        name: trimmedName,
+      });
+      displayNameSyncRef.current = trimmedName;
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isHost, name, room?.status, roomId, sessionId]);
+
   const headerTitle = isHost
     ? activeGuest || pendingGuest || 'Waiting room'
     : room?.hostName || `Room ${roomId}`;
+  const headerSubtitle = isHost ? 'Host view' : 'Guest view';
 
   return (
     <main className={`app-shell ${isActiveRoom ? 'active-room' : ''} ${menuOpen ? 'menu-open' : ''}`}>
@@ -392,12 +476,21 @@ function App() {
             {statusText(roomStatus, pendingGuest, activeGuest)}
           </div>
 
+          {statusMessage && <p className="muted">{statusMessage}</p>}
+
           {error && <div className="error-box">{error}</div>}
+
+          {isRoomLoading && (
+            <div className="room-loading" data-testid="room-loading" role="status" aria-live="polite">
+              <span className="loading-spinner" aria-hidden="true" />
+              <span>Preparing your room...</span>
+            </div>
+          )}
 
           <div className="action-stack">
             {!roomId && (
-              <button className="primary-action" onClick={createRoom}>
-                Generate Invite Link
+              <button className="primary-action" disabled={isRoomLoading} onClick={createRoom}>
+                {isRoomLoading ? 'Creating room...' : 'Generate Invite Link'}
               </button>
             )}
 
@@ -472,7 +565,7 @@ function App() {
       <section className="chat-window">
         <header className="chat-header">
           <div>
-            <p className="eyebrow">{isHost ? 'Host view' : 'Guest view'}</p>
+            <p className="eyebrow">{headerSubtitle}</p>
             <h2>{headerTitle}</h2>
           </div>
           <div className="chat-header-actions">
@@ -501,19 +594,18 @@ function App() {
 
           {!isHost && roomId && room?.status !== 'ACTIVE' && (
             <WaitingPreview
-              title={room?.status === 'PENDING' ? 'Request sent' : 'You are invited'}
+              title={waitingTitle(room?.status)}
               text={
-                room?.status === 'PENDING'
-                  ? 'The host sees your request. Chat unlocks only after approval.'
-                  : 'Send a join request and wait for the host to accept.'
+                waitingText(room?.status, statusMessage)
               }
-              action={room?.status === 'PENDING' ? 'Waiting for Host' : 'Request to Join'}
-              onAction={room?.status === 'PENDING' ? undefined : requestToJoin}
+              action={room?.status === 'ENDED' ? 'Room Closed' : room?.status === 'PENDING' ? 'Waiting for Host' : 'Request to Join'}
+              onAction={room?.status === 'PENDING' || room?.status === 'ENDED' ? undefined : requestToJoin}
             />
           )}
 
           {messages.map((message) => (
             <div className={`message-bubble ${message.author}`} key={message.id}>
+              <p className="message-author">{message.senderName || (message.author === 'host' ? 'Host' : 'Guest')}</p>
               <p>{message.text}</p>
               <span>{message.time}</span>
             </div>
@@ -655,6 +747,26 @@ function composerPlaceholder(status, connected) {
   if (status === 'ENDED') return 'Room has ended';
   if (status === 'PENDING') return 'Waiting for host approval';
   return 'Chat unlocks after approval';
+}
+
+function waitingTitle(status) {
+  if (status === 'PENDING') return 'Request sent';
+  if (status === 'ENDED') return 'Room ended';
+  if (status === 'WAITING') return 'Waiting for host';
+  return 'You are invited';
+}
+
+function waitingText(status, statusMessage) {
+  if (status === 'ENDED') {
+    return statusMessage || 'The host closed this room. Messages were cleared for this guest view.';
+  }
+  if (status === 'PENDING') {
+    return statusMessage || 'The host sees your request. Chat unlocks only after approval.';
+  }
+  if (status === 'WAITING') {
+    return statusMessage || 'The room is open, but no guest is connected right now.';
+  }
+  return statusMessage || 'Send a join request and wait for the host to accept.';
 }
 
 export default App;

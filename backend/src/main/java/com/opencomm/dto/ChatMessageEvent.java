@@ -6,6 +6,7 @@ public class ChatMessageEvent {
     private String type = "MESSAGE";
     private String roomId;
     private String senderSessionId;
+    private String senderRole;
     private String senderName;
     private String text;
     private Instant sentAt = Instant.now();
@@ -32,6 +33,14 @@ public class ChatMessageEvent {
 
     public void setSenderSessionId(String senderSessionId) {
         this.senderSessionId = senderSessionId;
+    }
+
+    public String getSenderRole() {
+        return senderRole;
+    }
+
+    public void setSenderRole(String senderRole) {
+        this.senderRole = senderRole;
     }
 
     public String getSenderName() {

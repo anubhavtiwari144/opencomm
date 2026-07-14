@@ -5,6 +5,7 @@ import com.opencomm.dto.JoinRequest;
 import com.opencomm.dto.RoomActionRequest;
 import com.opencomm.dto.SendMessageRequest;
 import com.opencomm.dto.StatusEvent;
+import com.opencomm.dto.UpdateDisplayNameRequest;
 import com.opencomm.model.Room;
 import com.opencomm.service.RoomService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -58,6 +59,12 @@ public class ChatWebSocketController {
                 "/topic/room/" + request.getRoomId() + "/status",
                 StatusEvent.of("ROOM_ENDED", room, "Host ended the room")
         );
+    }
+
+    @MessageMapping("/display-name")
+    public void updateDisplayName(@Valid UpdateDisplayNameRequest request) {
+        Room room = roomService.updateDisplayName(request.getRoomId(), request.getSessionId(), request.getName());
+        sendStatus(room, "DISPLAY_NAME_UPDATED", "Display name updated");
     }
 
     private void sendStatus(Room room, String type, String message) {

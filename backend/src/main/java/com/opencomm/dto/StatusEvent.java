@@ -33,6 +33,14 @@ public class StatusEvent {
         return event;
     }
 
+    public static StatusEvent deleted(Room room, String message) {
+        StatusEvent event = deleted(room.getRoomId(), message);
+        event.setHostName(room.getHost() == null ? null : room.getHost().getName());
+        event.setGuestName(room.getGuest() == null ? null : room.getGuest().getName());
+        event.setPendingGuestName(room.getPendingGuest() == null ? null : room.getPendingGuest().getName());
+        return event;
+    }
+
     public String getType() {
         return type;
     }

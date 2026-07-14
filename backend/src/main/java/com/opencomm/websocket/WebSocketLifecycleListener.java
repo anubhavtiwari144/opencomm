@@ -45,7 +45,7 @@ public class WebSocketLifecycleListener {
 
         String destination = "/topic/room/" + result.getRoomId() + "/status";
         if (result.isDeleted()) {
-            messagingTemplate.convertAndSend(destination, StatusEvent.deleted(result.getRoomId(), result.getMessage()));
+            messagingTemplate.convertAndSend(destination, StatusEvent.deleted(result.getRoom(), result.getMessage()));
         } else {
             messagingTemplate.convertAndSend(destination, StatusEvent.of("SESSION_DISCONNECTED", result.getRoom(), result.getMessage()));
         }

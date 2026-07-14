@@ -113,9 +113,23 @@ public class RoomService {
             ChatMessageEvent event = new ChatMessageEvent();
             event.setRoomId(roomId);
             event.setSenderSessionId(sender.getSessionId());
+            event.setSenderRole(isHost(room, senderSessionId) ? "host" : "guest");
             event.setSenderName(sender.getName());
             event.setText(text.trim());
             return event;
+        }
+    }
+
+    public Room updateDisplayName(String roomId, String sessionId, String name) {
+        Room room = getRoom(roomId);
+        synchronized (room) {
+            UserSession participant = findNamedSession(room, sessionId);
+            if (participant == null) {
+                throw new RoomException(HttpStatus.FORBIDDEN, "Only room participants can change display names");
+            }
+
+            participant.setName(cleanName(name));
+            return room;
         }
     }
 
@@ -143,9 +157,9 @@ public class RoomService {
 
         synchronized (room) {
             if (isHost(room, clientSessionId)) {
-                removeRoom(room);
                 room.setStatus(RoomStatus.ENDED);
-                return DisconnectResult.deleted(roomId);
+                removeRoom(room);
+                return DisconnectResult.deleted(room);
             }
 
             if (room.getPendingGuest() != null && clientSessionId.equals(room.getPendingGuest().getSessionId())) {
@@ -223,6 +237,17 @@ public class RoomService {
         return null;
     }
 
+    private UserSession findNamedSession(Room room, String sessionId) {
+        UserSession participant = findParticipant(room, sessionId);
+        if (participant != null) {
+            return participant;
+        }
+        if (room.getPendingGuest() != null && room.getPendingGuest().getSessionId().equals(sessionId)) {
+            return room.getPendingGuest();
+        }
+        return null;
+    }
+
     private void removeRoom(Room room) {
         roomsById.remove(room.getRoomId());
         if (room.getHost() != null) {
@@ -275,8 +300,8 @@ public class RoomService {
             return new DisconnectResult(false, false, null, null, null);
         }
 
-        public static DisconnectResult deleted(String roomId) {
-            return new DisconnectResult(true, true, roomId, null, "Host disconnected; room deleted");
+        public static DisconnectResult deleted(Room room) {
+            return new DisconnectResult(true, true, room.getRoomId(), room, "Host disconnected; room deleted");
         }
 
         public static DisconnectResult updated(Room room, String message) {
